@@ -1,6 +1,6 @@
 from __future__ import annotations
 from colorsys import hsv_to_rgb
-from typing import Dict, List, Set, Tuple, cast
+from typing import Dict, List, Tuple, cast
 from random import random
 
 import pygame
@@ -48,7 +48,7 @@ class Node:
         self.row = 0
         self.xOffset = 0
 
-    def updatePos(self, occupied: NodePositions, row=0, parentX=0, xOffset=0, path=Path()):
+    def updatePos(self, occupied: NodePositions, row: int = 0, parentX: int = 0, xOffset: int = 0, path: Path = Path()):
         self.row = row
         self.xOffset = xOffset
         
@@ -62,14 +62,16 @@ class Node:
             case Apply():
                 if self.left: self.left.updatePos(occupied, row + 1, x, -minOffset, path.left())
                 if self.right: self.right.updatePos(occupied, row + 1, x, minOffset, path.right())
+            case _:
+                raise Unreachable()
 
     def moveX(self, offset: int):
         self.xOffset += offset
 
-    def updateOccupied(self, occupied: NodePositions, parentX=0, path=Path()):
+    def updateOccupied(self, occupied: NodePositions, parentX: int = 0, path: Path = Path()):
         pass
     
-    def toScreenPos(self, parentX) -> Vector2:
+    def toScreenPos(self, parentX: int) -> Vector2:
         x = parentX + self.xOffset
         return Vector2(x * 30 + 500, self.row * 50 + 100)
     
@@ -102,7 +104,7 @@ class Lambda(Node):
     def __repr__(self):
         return f"L{self.param}.{self.body}"
 
-    def updateOccupied(self, occupied: NodePositions, parentX=0, path=Path()):
+    def updateOccupied(self, occupied: NodePositions, parentX: int = 0, path: Path = Path()):
         x = parentX + self.xOffset
         occupied.occupy(self.row, x, path)
         if self.body: self.body.updateOccupied(occupied, x, path.down())
@@ -166,7 +168,7 @@ class Lambda(Node):
 class Apply(Node):
     left: Node | None
     right: Node | None
-    def __init__(self, left, right):
+    def __init__(self, left: Node | None, right: Node | None):
         super().__init__()
         self.left = left
         self.right = right
@@ -174,7 +176,7 @@ class Apply(Node):
     def __repr__(self):
         return f"({self.left}) ({self.right})"
 
-    def updateOccupied(self, occupied: NodePositions, parentX=0, path=Path()):
+    def updateOccupied(self, occupied: NodePositions, parentX: int = 0, path: Path = Path()):
         x = parentX + self.xOffset
         occupied.occupy(self.row, x, path)
         if self.left: self.left.updateOccupied(occupied, x, path.left())
@@ -313,7 +315,7 @@ class Var(Node):
     def __repr__(self):
         return self.name.__repr__()
 
-    def updateOccupied(self, occupied: NodePositions, parentX=0, path=Path()):
+    def updateOccupied(self, occupied: NodePositions, parentX: int = 0, path: Path = Path()):
         x = parentX + self.xOffset
         occupied.occupy(self.row, x, path)
 
@@ -366,7 +368,7 @@ class Tree:
     freeVars: VarNameSet
     nodePositions: NodePositions
 
-    def __init__(self, root=None):
+    def __init__(self, root: Node | None = None):
         self.root = root
         self.freeVars = VarNameSet()
         self.nodePositions = NodePositions()
@@ -385,6 +387,8 @@ class Tree:
                     currentNode = cast(Lambda, currentNode).body
                 case '2':
                     currentNode = cast(Apply, currentNode).right
+                case _:
+                    raise Unreachable()
         return currentNode # type: ignore
 
     def updateStructure(self):
@@ -415,7 +419,7 @@ class Tree:
         if self.root.add(new):
             self.freeVars.add(cast(VarName, new))
 
-    def draw(self, screen):
+    def draw(self, screen: pygame.Surface):
         if self.root is None: return
         self.root.draw(screen, 0)
     
@@ -449,8 +453,8 @@ screen = pygame.display.set_mode((1280, 720))
 clock = pygame.time.Clock()
 running = True
 
-shorthandValsX = [VarName("x") for i in range(3)]
-shorthandValsY = [VarName("y") for i in range(2)]
+shorthandValsX = [VarName("x") for _ in range(3)]
+shorthandValsY = [VarName("y") for _ in range(2)]
 
 shorthands: Dict[str, Node] = {
     "I": Lambda(

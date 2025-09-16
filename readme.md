@@ -3,3 +3,4 @@
 - Detect redexes
     - Highlight redexes
 - Substitution
+- Strict typing
