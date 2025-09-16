@@ -1,10 +1,16 @@
 from __future__ import annotations
 from colorsys import hsv_to_rgb
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, cast
 from random import random
 
 import pygame
 from pygame.math import Vector2
+
+class Unreachable(Exception):
+    pass
+
+class Unimplemented(Exception):
+    pass
 
 pygame.init()
 
@@ -42,7 +48,7 @@ class Node:
         self.row = 0
         self.xOffset = 0
 
-    def updatePos(self, occupied: NodePositions, row=0, parentX=0, xOffset=0, path=Path()) -> int:
+    def updatePos(self, occupied: NodePositions, row=0, parentX=0, xOffset=0, path=Path()):
         self.row = row
         self.xOffset = xOffset
         
@@ -63,14 +69,11 @@ class Node:
     def updateOccupied(self, occupied: NodePositions, parentX=0, path=Path()):
         pass
     
-    def toScreenPos(self, parentX) -> Tuple[int, int]:
+    def toScreenPos(self, parentX) -> Vector2:
         x = parentX + self.xOffset
         return Vector2(x * 30 + 500, self.row * 50 + 100)
     
     def draw(self, screen: pygame.Surface, parentX: int):
-        pass
-    
-    def getUnfinishedNode(self):
         pass
 
     def undo(self):
@@ -80,10 +83,13 @@ class Node:
         return True
     
     def copy(self, bindings: VarNameSet) -> Node:
-        pass
+        raise Unreachable()
 
     def add(self, new: Node | VarName) -> bool | None:
         return None
+    
+    def safeDelete(self):
+        pass
 
 class Lambda(Node):
     param: VarName | None
@@ -113,16 +119,13 @@ class Lambda(Node):
         text = font.render(f"λ{self.param if self.param else ''}", True, self.param.color if self.param else "black", "purple")
         screen.blit(text, start - Vector2(text.get_size()) / 2)
     
-    def getUnfinishedNode(self):
-        if self.param is None or self.body is None: return self
-        return self.body.getUnfinishedNode()
-
     def undo(self):
         if self.body is None:
             self.param = None
             return
         
         if self.body.isLeaf():
+            self.body.safeDelete()
             self.body = None
             return
     
@@ -132,6 +135,7 @@ class Lambda(Node):
         return self.param is None
     
     def copy(self, bindings: VarNameSet) -> Node:
+        if self.param is None: raise Unreachable()
         newParam = self.param.copy()
         bindings = bindings.addPure(newParam)
         return Lambda(
@@ -153,7 +157,7 @@ class Lambda(Node):
             else:
                 newFree = True
         if self.body is None:
-            if type(new) == VarName: new = Var(new)
+            if isinstance(new, VarName): new = Var(new)
             self.body = new
             return newFree
         result = self.body.add(new)
@@ -188,24 +192,20 @@ class Apply(Node):
             
         text = font.render('@', True, "black", "purple")
         screen.blit(text, start - Vector2(text.get_size()) / 2)
-    
-    def getUnfinishedNode(self):
-        if self.left is None: return self
-        left = self.left.getUnfinishedNode()
-        if left: return left
-        if self.right is None: return self
-        return self.right.getUnfinishedNode()
 
     def undo(self):
         if self.right is None:
-            if self.left.isLeaf():
+            left = cast(Node, self.left)
+            if left.isLeaf():
+                left.safeDelete()
                 self.left = None
                 return
             
-            self.left.undo()
+            left.undo()
             return
 
         if self.right.isLeaf():
+            self.right.safeDelete()
             self.right = None
             return
 
@@ -223,7 +223,7 @@ class Apply(Node):
     # returns None if nothing was added, True if free var was added, False if otherwise
     def add(self, new: Node | VarName) -> bool | None:
         if self.left is None:
-            if type(new) == VarName:
+            if isinstance(new, VarName):
                 self.left = Var(new)
                 return True
             self.left = new
@@ -232,7 +232,7 @@ class Apply(Node):
         if result is not None:
             return result
         if self.right is None:
-            if type(new) == VarName:
+            if isinstance(new, VarName):
                 self.right = Var(new)
                 return True
             self.right = new
@@ -242,15 +242,23 @@ class Apply(Node):
 class VarName:
     inner: str
     color: pygame.Color
+    usage: int
     def __init__(self, name: str):
         self.inner = name
         self.color = randomColor()
+        self.usage = 0
     
     def rename(self, newName: str):
         self.name = newName
     
     def autoRename(self):
         self.name += "'"
+
+    def incUsage(self):
+        self.usage += 1
+
+    def decUsage(self):
+        self.usage -= 1
 
     def copy(self) -> VarName:
         return VarName(self.inner)
@@ -266,10 +274,10 @@ class VarNameSet:
     def __init__(self, inner: List[VarName] = []):
         self.inner = inner
 
+    def __repr__(self):
+        return self.inner.__repr__()
+
     def add(self, new: VarName):
-        if type(new) != VarName:
-            print(f"Type was {type(new)}")
-            exit(0)
         matches = [i for i, name in enumerate(self.inner) if name.inner == new.inner]
         if matches:
             self.inner[matches[0]] = new
@@ -287,6 +295,9 @@ class VarNameSet:
     def clear(self):
         self.inner.clear()
 
+    def removeUnused(self):
+        self.inner[:] = [name for name in self.inner if name.usage > 0]
+
     def get(self, nameStr: str) -> VarName | None:
         result = [v for v in self.inner if v.inner == nameStr]
         if len(result) == 0: return None
@@ -297,6 +308,7 @@ class Var(Node):
     def __init__(self, name: VarName):
         super().__init__()
         self.name = name
+        self.name.incUsage()
 
     def __repr__(self):
         return self.name.__repr__()
@@ -311,10 +323,15 @@ class Var(Node):
         screen.blit(text, start - Vector2(text.get_size()) / 2)
 
     def copy(self, bindings: VarNameSet):
-        return Var(bindings.get(self.name.inner))
+        binding = bindings.get(self.name.inner)
+        if binding is None: raise Unreachable
+        return Var(binding)
+    
+    def safeDelete(self):
+        self.name.decUsage()
 
 class NodePositions:
-    inner: Dict[(int, int), List[Path]]
+    inner: Dict[Tuple[int, int], List[Path]]
     def __init__(self):
         self.inner = {}
 
@@ -331,7 +348,7 @@ class NodePositions:
             self.inner[(row, x)] = [path]
 
     def getHighestOverlap(self) -> Tuple[Path, Path] | None:
-        highest: Tuple[int, Path] | None = None
+        highest: Tuple[int, List[Path]] | None = None
         for ((row, _), paths) in self.inner.items():
             if len(paths) > 1 and (highest is None or row < highest[0]):
                 highest = (row, paths)
@@ -357,17 +374,18 @@ class Tree:
     def __repr__(self):
         return self.root.__repr__()
 
+    # Does NOT check if path is valid
     def getByPath(self, path: Path) -> Node:
         currentNode = self.root
         for step in path:
             match step:
                 case '0':
-                    currentNode = currentNode.left
+                    currentNode = cast(Apply, currentNode).left
                 case '1':
-                    currentNode = currentNode.down
+                    currentNode = cast(Lambda, currentNode).body
                 case '2':
-                    currentNode = currentNode.right
-        return currentNode
+                    currentNode = cast(Apply, currentNode).right
+        return currentNode # type: ignore
 
     def updateStructure(self):
         self.nodePositions.clear()
@@ -383,42 +401,39 @@ class Tree:
             if i > 2: return
             i += 1
 
-    def add(self, new: Node | str):
-        if type(new) == str:
+    def add(self, new: Node | str | VarName):
+        if isinstance(new, str):
             new = self.freeVars.get(new) or VarName(new)
             
         if self.root is None:
-            if type(new) == str:
-                newName = VarName(new)
-                self.freeVars.add(newName)
-                new = Var(newName)
+            if isinstance(new, VarName):
+                self.freeVars.add(new)
+                new = Var(new)
             self.root = new
             return
 
         if self.root.add(new):
-            self.freeVars.add(new)
+            self.freeVars.add(cast(VarName, new))
 
     def draw(self, screen):
         if self.root is None: return
         self.root.draw(screen, 0)
-
-    def getUnfinishedNode(self) -> Node | Tree | None:
-        if self.root is None: return self
-        return self.root.getUnfinishedNode()
     
     def undo(self):
         if self.root:
             if self.root.isLeaf():
+                self.root.safeDelete()
                 self.root = None
             else:
                 self.root.undo()
+            self.freeVars.removeUnused()
 
     def clear(self):
         self.root = None
         self.freeVars.clear()
 
     def isComplete(self) -> bool:
-        return self.getUnfinishedNode() is None
+        return False
     
     def isClosed(self) -> bool:
         return self.freeVars.isEmpty()
@@ -434,36 +449,41 @@ screen = pygame.display.set_mode((1280, 720))
 clock = pygame.time.Clock()
 running = True
 
-shorthands = {
+shorthandValsX = [VarName("x") for i in range(3)]
+shorthandValsY = [VarName("y") for i in range(2)]
+
+shorthands: Dict[str, Node] = {
     "I": Lambda(
-        VarName("x"),
-        Var("x")
+        shorthandValsX[0],
+        Var(shorthandValsX[0])
     ),
     "T": Lambda(
-        VarName("x"),
+        shorthandValsX[1],
         Lambda(
-            VarName("y"),
-            Var("x")
+            shorthandValsY[0],
+            Var(shorthandValsX[1])
         )
     ),
     "F": Lambda(
-        VarName("x"),
+        shorthandValsX[2],
         Lambda(
-            VarName("y"),
-            Var("y")
+            shorthandValsY[1],
+            Var(shorthandValsY[1])
         )
     )
 }
 
 def genChurchNumber(n: int) -> Node:
-    body = Var("z")
+    z = VarName("z")
+    s = VarName("s")
+    body = Var(z)
     for _ in range(n):
-        body = Apply(Var("s"), body)
+        body = Apply(Var(s), body)
 
     return Lambda(
-        "s",
+        s,
         Lambda(
-            "s",
+            z,
             body
         )
     )
