@@ -710,17 +710,15 @@ def _parseTerm(term: Iterator[str]) -> str:
             case "(":
                 subTerms += _parseTerm(term)
             case "L":
-                if subTerms != "" or nApply > 0: raise MalformattedTerm()
-                return _parseLambda(term)
+                subTerms += _parseLambda(term)
+                return "@" * nApply + "".join(subTerms)
             case _:
                 if c < "a" or c > "z": raise MalformattedTerm(c)
                 subTerms += c
         
         match c := tryNext(term):
             case "" | ")":
-                result = "@" * nApply + "".join(subTerms)
-                print("returning", result)
-                return result
+                return "@" * nApply + "".join(subTerms)
             case " ":
                 nApply += 1
             case _:
@@ -733,9 +731,7 @@ def _parseLambda(term: Iterator[str]) -> str:
         if c < "a" or c > "z": raise MalformattedTerm(c)
         params += "L" + c
     
-    result = params + _parseTerm(term)
-    print("returning", result)
-    return result
+    return params + _parseTerm(term)
 
 def parseTerm(term: str) -> Tree:
     ir = _parseTerm(iter(term))
