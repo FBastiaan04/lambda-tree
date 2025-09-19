@@ -15,10 +15,29 @@ class Unimplemented(Exception):
 pygame.init()
 
 minOffset = 1
-font = pygame.font.SysFont('arial', 16)
+font = pygame.font.SysFont('arial', 20)
+background = "black"
+foreground = "white"
+colWidth = 30
+rowHeight = 50
+startX = 500
+startY = 100
 
 def randomColor() -> pygame.Color:
     return pygame.Color(tuple(int(x * 255) for x in hsv_to_rgb(random(), 1, 1)))
+
+def squareRight(v: Vector2) -> Vector2:
+    return Vector2(-v.y, v.x)
+
+def surroundingRect(a: Vector2, b: Vector2) -> List[Vector2]:
+    basis = (b - a).normalize() * 10
+    basis += squareRight(basis) # basis now points left
+    return [
+        a + squareRight(basis),
+        a - basis,
+        b - squareRight(basis),
+        b + basis
+    ]
 
 class Path(str): # if a.path < b.path, then node a is left of node b
     def __repr__(self):
@@ -62,8 +81,9 @@ class Node:
             case Apply():
                 if self.left: self.left.updatePos(occupied, row + 1, x, -minOffset, path.left())
                 if self.right: self.right.updatePos(occupied, row + 1, x, minOffset, path.right())
+                self.highlightRedexes()
             case _:
-                raise Unreachable()
+                pass
 
     def moveX(self, offset: int):
         self.xOffset += offset
@@ -73,7 +93,7 @@ class Node:
     
     def toScreenPos(self, parentX: int) -> Vector2:
         x = parentX + self.xOffset
-        return Vector2(x * 30 + 500, self.row * 50 + 100)
+        return Vector2(x * colWidth + startX, self.row * rowHeight + startY)
     
     def draw(self, screen: pygame.Surface, parentX: int):
         pass
@@ -83,15 +103,28 @@ class Node:
 
     def isLeaf(self) -> bool:
         return True
-    
-    def copy(self, bindings: VarNameSet) -> Node:
-        raise Unreachable()
 
     def add(self, new: Node | VarName) -> bool | None:
         return None
     
     def safeDelete(self):
         pass
+
+    def isComplete(self) -> bool:
+        return False
+    
+    # All the following functions are only allowed if the tree is complete
+
+    def copy(self, bindings: VarNameSet) -> Node:
+        raise Unreachable()
+    
+    # Gets the free vars relative to this node
+    def getRelFreeVars(self) -> VarNameSet:
+        return VarNameSet()
+
+    # only returns true if this node is the var to be sub'd
+    def substitute(self, var: VarName, new: Node, relFreeVars: VarNameSet, scope: VarNameMultiSet) -> bool:
+        return False
 
 class Lambda(Node):
     param: VarName | None
@@ -115,10 +148,10 @@ class Lambda(Node):
         if self.body:
             x = parentX + self.xOffset
             end = self.body.toScreenPos(x)
-            pygame.draw.line(screen, "black", start, end)
+            pygame.draw.line(screen, foreground, start, end)
             self.body.draw(screen, x)
         
-        text = font.render(f"λ{self.param if self.param else ''}", True, self.param.color if self.param else "black", "purple")
+        text = font.render(f"λ{self.param if self.param else ''}", True, self.param.color if self.param else foreground, background)
         screen.blit(text, start - Vector2(text.get_size()) / 2)
     
     def undo(self):
@@ -164,14 +197,35 @@ class Lambda(Node):
             return newFree
         result = self.body.add(new)
         return result and newFree
-            
+    
+    def isComplete(self) -> bool:
+        return self.body is not None and self.body.isComplete()
+
+    def getRelFreeVars(self) -> VarNameSet:
+        if self.body is None or self.param is None: raise Unreachable()
+        result = self.body.getRelFreeVars()
+        result.remove(self.param)
+        return result
+
+    def substitute(self, var: VarName, new: Node, relFreeVars: VarNameSet, scope: VarNameMultiSet) -> bool:
+        if self.param is None or self.body is None: raise Unreachable()
+
+        scope.add(self.param)
+
+        if self.body.substitute(var, new, relFreeVars, scope):
+            self.body = new.copy(relFreeVars)
+        return False
+
 class Apply(Node):
     left: Node | None
     right: Node | None
+    isRedex: bool
+
     def __init__(self, left: Node | None, right: Node | None):
         super().__init__()
         self.left = left
         self.right = right
+        self.isRedex = False
 
     def __repr__(self):
         return f"({self.left}) ({self.right})"
@@ -189,11 +243,15 @@ class Apply(Node):
         for node in [self.left, self.right]:
             if node is None: continue
             end = node.toScreenPos(x)
-            pygame.draw.line(screen, "black", start, end)
+            pygame.draw.line(screen, foreground, start, end)
             node.draw(screen, x)
             
-        text = font.render('@', True, "black", "purple")
+        text = font.render('@', True, foreground, background)
         screen.blit(text, start - Vector2(text.get_size()) / 2)
+
+        if self.isRedex:
+            end = cast(Node, self.left).toScreenPos(x)
+            pygame.draw.lines(screen, "red", True, surroundingRect(start, end))
 
     def undo(self):
         if self.right is None:
@@ -240,6 +298,28 @@ class Apply(Node):
             self.right = new
             return False
         return self.right.add(new)
+    
+    def isComplete(self) -> bool:
+        return self.right is not None and self.right.isComplete()
+    
+    def getRelFreeVars(self) -> VarNameSet:
+        if self.left is None or self.right is None: raise Unreachable()
+        result = self.left.getRelFreeVars()
+        result.merge(self.right.getRelFreeVars())
+        return result
+    
+    def highlightRedexes(self):
+        self.isRedex = self.left is not None and self.right is not None and isinstance(self.left, Lambda)
+
+    def substitute(self, var: VarName, new: Node, relFreeVars: VarNameSet, scope: VarNameMultiSet) -> bool:
+        if self.left is None or self.right is None: raise Unreachable()
+
+        if self.left.substitute(var, new, relFreeVars, scope):
+            self.left = new.copy(relFreeVars)
+        if self.right.substitute(var, new, relFreeVars, scope):
+            self.right = new.copy(relFreeVars)
+        
+        return False
 
 class VarName:
     inner: str
@@ -251,16 +331,18 @@ class VarName:
         self.usage = 0
     
     def rename(self, newName: str):
-        self.name = newName
+        self.inner = newName
     
     def autoRename(self):
-        self.name += "'"
+        self.inner += "'"
 
     def incUsage(self):
         self.usage += 1
+        print(f"+usage for {self.inner}/{self.color} is {self.usage}")
 
     def decUsage(self):
         self.usage -= 1
+        print(f"-usage for {self.inner}/{self.color} is {self.usage}")
 
     def copy(self) -> VarName:
         return VarName(self.inner)
@@ -290,6 +372,13 @@ class VarNameSet:
         result = VarNameSet(self.inner.copy())
         result.add(new)
         return result
+    
+    def remove(self, name: VarName):
+        if name in self.inner:
+            self.inner.remove(name)
+
+    def merge(self, other: VarNameSet):
+        self.inner.extend(other.inner)
 
     def isEmpty(self) -> bool:
         return len(self.inner) == 0
@@ -305,12 +394,43 @@ class VarNameSet:
         if len(result) == 0: return None
         return result[0]
 
+class VarNameMultiSet:
+    inner: List[VarName] = []
+
+    def __init__(self):
+        self.inner = []
+    
+    def add(self, new: VarName):
+        self.inner.append(new)
+
+    def resolveCollisions(self, others: VarNameSet):
+        toRename = self.inner.copy()
+        noRename = others.inner.copy()
+        toRenameNew: List[VarName] = []
+        noRenameNew: List[VarName] = []
+        while True:
+            for name in toRename:
+                for other in noRename:
+                    if name.nameEq(other) and name != other:
+                        toRenameNew.append(name)
+                    else:
+                        noRenameNew.append(name)
+            if len(toRename) == 0:
+                break
+            noRename.extend(noRenameNew)
+            noRenameNew.clear()
+            toRename = toRenameNew
+            toRenameNew = []
+            for name in toRename:
+                name.autoRename()
+            toRename.clear()
+
 class Var(Node):
     name: VarName
     def __init__(self, name: VarName):
         super().__init__()
         self.name = name
-        self.name.incUsage()
+        name.incUsage()
 
     def __repr__(self):
         return self.name.__repr__()
@@ -321,7 +441,7 @@ class Var(Node):
 
     def draw(self, screen: pygame.Surface, parentX: int):
         start = self.toScreenPos(parentX)
-        text = font.render(self.name.__repr__(), True, self.name.color, "purple")
+        text = font.render(self.name.__repr__(), True, self.name.color, background)
         screen.blit(text, start - Vector2(text.get_size()) / 2)
 
     def copy(self, bindings: VarNameSet):
@@ -331,6 +451,20 @@ class Var(Node):
     
     def safeDelete(self):
         self.name.decUsage()
+
+    def isComplete(self) -> bool:
+        return True
+    
+    def getRelFreeVars(self) -> VarNameSet:
+        return VarNameSet([self.name])
+
+    def substitute(self, var: VarName, new: Node, relFreeVars: VarNameSet, scope: VarNameMultiSet) -> bool:
+        if self.name != var:
+            return False
+        
+        scope.resolveCollisions(relFreeVars)
+        
+        return True
 
 class NodePositions:
     inner: Dict[Tuple[int, int], List[Path]]
@@ -362,6 +496,13 @@ class NodePositions:
         leftMost = min(paths)
         rightMost = max(paths)
         return (leftMost, rightMost)
+    
+    def getByPos(self, pos: Tuple[int, int]) -> Path | None:
+        posLocal = (pos[1] - startY + rowHeight // 2) // rowHeight, (pos[0] - startX + colWidth // 2) // colWidth
+        print(posLocal)
+        print(self.inner)
+        result = [v for k, v in self.inner.items() if k == posLocal]
+        return result[0][0] if result and result[0] else None
 
 class Tree:
     root: Node | None
@@ -404,6 +545,77 @@ class Tree:
             self.root.updateOccupied(self.nodePositions)
             if i > 2: return
             i += 1
+    
+    def getByPos(self, pos: Tuple[int, int]) -> Path | None:
+        return self.nodePositions.getByPos(pos)
+
+    def betaReduce(self, path: Path):
+        if not self.isComplete(): return
+
+        nodeApp = self.getByPath(path)
+        if not (isinstance(nodeApp, Apply) and nodeApp.isRedex): return
+        nodeLam = cast(Lambda, nodeApp.left)
+        varName = cast(VarName, nodeLam.param)
+        subVal = cast(Node, nodeApp.right)
+        newRoot = cast(Node, nodeLam.body)
+        relFreeVars = subVal.getRelFreeVars()
+
+        if len(path) == 0:
+            print("AA")
+            self.root = newRoot
+            parent = self
+            scope = VarNameMultiSet()
+        else:
+            parentPath = Path(path[:-1])
+            parent = self.getByPath(parentPath)
+            match path[-1]:
+                case "0":
+                    cast(Apply, parent).left = newRoot
+                case "1":
+                    print("here")
+                    cast(Lambda, parent).body = newRoot
+                case "2":
+                    cast(Apply, parent).right = newRoot
+                case _:
+                    raise Unreachable()
+            scope = self.getScopeByPath(parentPath)
+
+        if newRoot.substitute(varName, subVal, relFreeVars, scope):
+            tmp = subVal.copy(relFreeVars)
+            if isinstance(parent, Tree):
+                self.root = tmp
+            else:
+                match path[-1]:
+                    case "0":
+                        cast(Apply, parent).left = tmp
+                    case "1":
+                        cast(Lambda, parent).body = tmp
+                    case "2":
+                        cast(Apply, parent).right = tmp
+                    case _:
+                        raise Unreachable()
+        
+        subVal.safeDelete()
+
+        self.updateStructure()
+        self.freeVars.removeUnused()
+
+    def getScopeByPath(self, path: Path) -> VarNameMultiSet:
+        result = VarNameMultiSet()
+        current = self.root
+        for step in path:
+            match step:
+                case "0":
+                    cast(Apply, current).left
+                case "1":
+                    current = cast(Lambda, current)
+                    result.add(cast(VarName, current.param))
+                    current = current.body
+                case "2":
+                    cast(Apply, current).left
+                case _:
+                    raise Unreachable()
+        return result
 
     def add(self, new: Node | str | VarName):
         if isinstance(new, str):
@@ -437,7 +649,7 @@ class Tree:
         self.freeVars.clear()
 
     def isComplete(self) -> bool:
-        return False
+        return self.root is not None and self.root.isComplete()
     
     def isClosed(self) -> bool:
         return self.freeVars.isEmpty()
@@ -529,6 +741,11 @@ while running:
                     newNode = Apply(None, None)
                 case _:
                     if event.unicode != "": newNode = event.unicode
+        
+        if event.type == pygame.MOUSEBUTTONUP:
+            path = tree.getByPos(event.pos)
+            if path is not None:
+                tree.betaReduce(path)
 
     if newNode:
         print(f"adding {newNode}")
@@ -537,7 +754,7 @@ while running:
         print(tree, tree.freeVars)
 
     # fill the screen with a color to wipe away anything from last frame
-    screen.fill("purple")
+    screen.fill(background)
 
     tree.draw(screen)
 
