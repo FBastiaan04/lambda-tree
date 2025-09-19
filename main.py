@@ -338,11 +338,9 @@ class VarName:
 
     def incUsage(self):
         self.usage += 1
-        print(f"+usage for {self.inner}/{self.color} is {self.usage}")
 
     def decUsage(self):
         self.usage -= 1
-        print(f"-usage for {self.inner}/{self.color} is {self.usage}")
 
     def copy(self) -> VarName:
         return VarName(self.inner)
@@ -499,8 +497,6 @@ class NodePositions:
     
     def getByPos(self, pos: Tuple[int, int]) -> Path | None:
         posLocal = (pos[1] - startY + rowHeight // 2) // rowHeight, (pos[0] - startX + colWidth // 2) // colWidth
-        print(posLocal)
-        print(self.inner)
         result = [v for k, v in self.inner.items() if k == posLocal]
         return result[0][0] if result and result[0] else None
 
@@ -561,7 +557,6 @@ class Tree:
         relFreeVars = subVal.getRelFreeVars()
 
         if len(path) == 0:
-            print("AA")
             self.root = newRoot
             parent = self
             scope = VarNameMultiSet()
@@ -572,7 +567,6 @@ class Tree:
                 case "0":
                     cast(Apply, parent).left = newRoot
                 case "1":
-                    print("here")
                     cast(Lambda, parent).body = newRoot
                 case "2":
                     cast(Apply, parent).right = newRoot
@@ -715,7 +709,6 @@ while running:
             running = False
         
         if event.type == pygame.KEYUP:
-            print(event)
             if event.mod & pygame.KMOD_SHIFT:
                 if event.key < 33 or event.key > 126: continue
                 if event.unicode in shorthands:
