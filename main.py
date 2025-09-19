@@ -1,6 +1,6 @@
 from __future__ import annotations
 from colorsys import hsv_to_rgb
-from typing import Dict, List, Tuple, cast
+from typing import Dict, Iterator, List, Tuple, cast
 from random import random
 
 import pygame
@@ -10,6 +10,9 @@ class Unreachable(Exception):
     pass
 
 class Unimplemented(Exception):
+    pass
+
+class MalformattedTerm(Exception):
     pass
 
 pygame.init()
@@ -653,12 +656,6 @@ class Tree:
         result = self.root.copy(VarNameSet())
         return result
 
-tree = Tree()
-
-screen = pygame.display.set_mode((1280, 720))
-clock = pygame.time.Clock()
-running = True
-
 shorthandValsX = [VarName("x") for _ in range(3)]
 shorthandValsY = [VarName("y") for _ in range(2)]
 
@@ -697,6 +694,71 @@ def genChurchNumber(n: int) -> Node:
             body
         )
     )
+
+def tryNext(it: Iterator[str]) -> str:
+    try:
+        return next(it)
+    except StopIteration:
+        return ""
+
+# @returns the subtree and any free vars in the sub term
+def _parseTerm(term: Iterator[str]) -> str:
+    subTerms = ""
+    nApply = 0
+    while True:
+        match c := tryNext(term):
+            case "(":
+                subTerms += _parseTerm(term)
+            case "L":
+                if subTerms != "" or nApply > 0: raise MalformattedTerm()
+                return _parseLambda(term)
+            case _:
+                if c < "a" or c > "z": raise MalformattedTerm(c)
+                subTerms += c
+        
+        match c := tryNext(term):
+            case "" | ")":
+                result = "@" * nApply + "".join(subTerms)
+                print("returning", result)
+                return result
+            case " ":
+                nApply += 1
+            case _:
+                raise MalformattedTerm(c)
+
+# Starts after the 'L'        
+def _parseLambda(term: Iterator[str]) -> str:
+    params = ""
+    while (c := tryNext(term)) != ".":
+        if c < "a" or c > "z": raise MalformattedTerm(c)
+        params += "L" + c
+    
+    result = params + _parseTerm(term)
+    print("returning", result)
+    return result
+
+def parseTerm(term: str) -> Tree:
+    ir = _parseTerm(iter(term))
+    print("ir", ir)
+    result = Tree()
+    for c in ir:
+        match c:
+            case "L":
+                result.add(Lambda(None, None))
+            case "@":
+                result.add(Apply(None, None))
+            case _:
+                result.add(c)
+
+    print("tree", result)
+    result.updateStructure()
+    return result
+
+tree = parseTerm(input())
+
+screen = pygame.display.set_mode((1280, 720))
+clock = pygame.time.Clock()
+running = True
 
 while running:
     # poll for events
@@ -757,3 +819,4 @@ while running:
     clock.tick(60)  # limits FPS to 60
 
 pygame.quit()
+
