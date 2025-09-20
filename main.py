@@ -523,6 +523,7 @@ class Tree:
     root: Node | None
     freeVars: VarNameSet
     nodePositions: NodePositions
+    startedReducing = False
 
     def __init__(self, root: Node | None = None):
         self.root = root
@@ -567,7 +568,9 @@ class Tree:
     def betaReduce(self, path: Path):
         if not self.isComplete(): return
 
-        print(self, end=" -> ")
+        if not self.startedReducing:
+            print(f"{self} ->")
+            self.startedReducing = True
 
         nodeApp = self.getByPath(path)
         if not (isinstance(nodeApp, Apply) and nodeApp.isRedex): return
@@ -614,7 +617,7 @@ class Tree:
 
         self.updateStructure()
         self.freeVars.removeUnused()
-        print(self)
+        print(f"{self} ->")
 
     def getScopeByPath(self, path: Path) -> VarNameMultiSet:
         result = VarNameMultiSet()
@@ -686,6 +689,7 @@ class Tree:
 
     def clear(self):
         print("CLEAR")
+        self.startedReducing = False
         self.root = None
         self.freeVars.clear()
 
