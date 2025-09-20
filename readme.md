@@ -29,8 +29,8 @@ Church numbers 0-9 are also shorthands, but those are generated dynamically.
 
 # TODO
 - Indicate where you're typing
-- Correctly turn trees into strings
-- Correctly structure trees like x (Lx.x x) Ly.Lz.y z
+- Output `x Lx.x` instead of `x (Lx.x)`
+- Correctly structure trees like `x (Lx.x x) Ly.Lz.y z`
 - Save user-made shorthands to file
 - Add key for inputting term
 - Add key for autoReduce
