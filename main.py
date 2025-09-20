@@ -2,6 +2,7 @@ from __future__ import annotations
 from colorsys import hsv_to_rgb
 from typing import Dict, Iterator, List, Tuple, cast
 from random import random
+from copy import copy
 
 import pygame
 from pygame.math import Vector2
@@ -649,17 +650,23 @@ class Tree:
             self.freeVars.add(cast(VarName, new))
 
     def addIR(self, ir: str):
-        for c in ir:
+        for i, c in enumerate(ir):
             match c:
                 case "λ":
                     self.add(Lambda(None, None))
                 case "@":
                     self.add(Apply(None, None))
+                case "'":
+                    continue
                 case _:
                     if c in shorthands:
                         self.add(shorthands[c].copy(VarNameSet()))
-                    else:
-                        self.add(c)
+                        continue
+                    j = i + 1
+                    while len(ir) > j and ir[j] == "'":
+                        c += "'"
+                        j += 1
+                    self.add(c)
 
     def draw(self, screen: pygame.Surface):
         if self.root is None: return
@@ -710,6 +717,9 @@ def tryNext(it: Iterator[str]) -> str:
     except StopIteration:
         return ""
 
+def peek(it: Iterator[str]) -> str:
+    return tryNext(copy(it))
+
 # @returns the subtree and any free vars in the sub term
 def _parseTerm(term: Iterator[str]) -> str:
     subTerms = ""
@@ -723,8 +733,10 @@ def _parseTerm(term: Iterator[str]) -> str:
                 return "@" * nApply + "".join(subTerms)
             case _:
                 if (c < "a" or c > "z") and (c < "A" or c > "Z"): raise MalformattedTerm(c)
+                while peek(term) == "'":
+                    c += next(term)
                 subTerms += c
-        
+                
         match c := tryNext(term):
             case "" | ")":
                 return "@" * nApply + "".join(subTerms)
@@ -738,6 +750,8 @@ def _parseLambda(term: Iterator[str]) -> str:
     params = ""
     while (c := tryNext(term)) != ".":
         if c < "a" or c > "z": raise MalformattedTerm(c)
+        while peek(term) == "'":
+            c += next(term)
         params += "λ" + c
     
     return params + _parseTerm(term)
