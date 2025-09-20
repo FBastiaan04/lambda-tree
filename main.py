@@ -801,9 +801,7 @@ def saveShorthand(name: str):
     if newShorthand:
         shorthands[name] = newShorthand
         with open("shorthands", "r+") as fh:
-            linesA = fh.readlines()
-            lines = [line for line in linesA if line[0] != name]
-            print(linesA, lines)
+            lines = [line for line in fh.readlines() if line[0] != name]
             lines.append(f"{name} = {newShorthand}\n".replace("λ", "L"))
             fh.seek(0)
             fh.writelines(lines)
@@ -854,7 +852,7 @@ while running:
                         continue
                     screen.blit(font.render("Awaiting input from terminal", True, "red"), (200,10))
                     pygame.display.flip()
-                    inp = input("term (use L for λ): ").strip()
+                    inp = input("Term (use L for λ): ").strip()
                     try:
                         ir = _parseTerm(iter(inp))
                     except MalformattedTerm:
@@ -878,7 +876,7 @@ while running:
             startX = screen.get_width() // 2
 
     if newNode:
-        print(f"adding {newNode}")
+        print(f"Adding {newNode}")
         tree.add(newNode)
         tree.updateStructure()
         print(tree)
