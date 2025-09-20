@@ -23,8 +23,8 @@ background = "black"
 foreground = "white"
 colWidth = 30
 rowHeight = 50
-startX = 500
-startY = 100
+startX = 640
+startY = 50
 
 def randomColor() -> pygame.Color:
     return pygame.Color(tuple(int(x * 255) for x in hsv_to_rgb(random(), 1, 1)))
@@ -128,7 +128,10 @@ class Node:
     # only returns true if this node is the var to be sub'd
     def substitute(self, var: VarName, new: Node, relFreeVars: VarNameSet, scope: VarNameMultiSet) -> bool:
         return False
-
+    
+    def getLeftmostOutermost(self, path: Path) -> Path | None:
+        return None
+    
 class Lambda(Node):
     param: VarName | None
     body: Node | None
@@ -218,6 +221,9 @@ class Lambda(Node):
         if self.body.substitute(var, new, relFreeVars, scope):
             self.body = new.copy(relFreeVars)
         return False
+    
+    def getLeftmostOutermost(self, path: Path) -> Path | None:
+        return cast(Node, self.body).getLeftmostOutermost(path.down())
 
 class Apply(Node):
     left: Node | None
@@ -328,6 +334,10 @@ class Apply(Node):
             self.right = new.copy(relFreeVars)
         
         return False
+    
+    def getLeftmostOutermost(self, path: Path) -> Path | None:
+        if self.isRedex: return path
+        return cast(Node, self.left).getLeftmostOutermost(path.left()) or cast(Node, self.right).getLeftmostOutermost(path.right())
 
 class VarName:
     inner: str
@@ -615,10 +625,15 @@ class Tree:
                     result.add(cast(VarName, current.param))
                     current = current.body
                 case "2":
-                    current = cast(Apply, current).left
+                    current = cast(Apply, current).right
                 case _:
                     raise Unreachable()
         return result
+
+    def autoReduce(self):
+        if self.root is None or not self.isComplete(): raise Unreachable()
+        path = self.root.getLeftmostOutermost(Path(""))
+        if path is not None: self.betaReduce(path)
 
     def add(self, new: Node | str | VarName):
         if isinstance(new, str):
@@ -633,6 +648,19 @@ class Tree:
 
         if self.root.add(new):
             self.freeVars.add(cast(VarName, new))
+
+    def addIR(self, ir: str):
+        for c in ir:
+            match c:
+                case "λ":
+                    self.add(Lambda(None, None))
+                case "@":
+                    self.add(Apply(None, None))
+                case _:
+                    if c in shorthands:
+                        self.add(shorthands[c].copy(VarNameSet()))
+                    else:
+                        self.add(c)
 
     def draw(self, screen: pygame.Surface):
         if self.root is None: return
@@ -717,21 +745,14 @@ def _parseLambda(term: Iterator[str]) -> str:
 
 shorthands: Dict[str, Node] = {}
 
-def parseTerm(term: str) -> Tree:
-    ir = _parseTerm(iter(term))
+def parseTerm(term: str) -> Tree | None:
+    try:
+        ir = _parseTerm(iter(term))
+    except MalformattedTerm:
+        return None
     print("ir", ir)
     result = Tree()
-    for c in ir:
-        match c:
-            case "λ":
-                result.add(Lambda(None, None))
-            case "@":
-                result.add(Apply(None, None))
-            case _:
-                if c in shorthands:
-                    result.add(shorthands[c].copy(VarNameSet()))
-                else:
-                    result.add(c)
+    result.addIR(ir)
 
     print("tree", result)
     result.updateStructure()
@@ -740,11 +761,13 @@ def parseTerm(term: str) -> Tree:
 with open("shorthands") as fh:
     for line in fh.readlines():
         shorthand, term = line.split(" = ")
-        shorthands[shorthand] = cast(Node, parseTerm(term.strip()).root)
+        termTree = parseTerm(term.strip())
+        if termTree is not None:
+            shorthands[shorthand] = cast(Node, termTree.root)
 
-tree = Tree()
+tree: Tree = Tree()
 
-screen = pygame.display.set_mode((1280, 720))
+screen = pygame.display.set_mode((1280, 720), pygame.RESIZABLE)
 clock = pygame.time.Clock()
 running = True
 
@@ -778,6 +801,18 @@ while running:
                 case pygame.K_BACKSPACE:
                     tree.undo()
                     tree.updateStructure()
+                case pygame.K_RETURN:
+                    if tree.isComplete():
+                        tree.autoReduce()
+                        continue
+                    inp = input("term (use L for λ): ").strip()
+                    try:
+                        ir = _parseTerm(iter(inp))
+                    except MalformattedTerm:
+                        print("Term was invalid")
+                        continue
+                    tree.addIR(ir)
+                    tree.updateStructure()
                 case pygame.K_l:
                     newNode = Lambda(None, None)
                 case pygame.K_SPACE:
@@ -789,6 +824,9 @@ while running:
             path = tree.getByPos(event.pos)
             if path is not None:
                 tree.betaReduce(path)
+
+        if event.type == pygame.VIDEORESIZE:
+            startX = screen.get_width() // 2
 
     if newNode:
         print(f"adding {newNode}")

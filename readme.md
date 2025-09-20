@@ -28,11 +28,11 @@ The shorthands are stored in the `/shorthands` file. This can be manually edited
 Church numbers 0-9 are also shorthands, but those are generated dynamically.
 
 # TODO
-- Indicate where you're typing
-- Output `x Lx.x` instead of `x (Lx.x)`
+? means might not do
+- Indicate where you're typing ?
+- Output `x Lx.x` instead of `x (Lx.x)` ?
 - Correctly structure trees like `x (Lx.x x) Ly.Lz.y z`
 - Save user-made shorthands to file
-- Add key for inputting term
-- Add key for autoReduce
 - Display usage on screen
 - Display shorthands while pressing `shift`
+- Zoom
