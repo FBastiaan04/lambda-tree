@@ -31,5 +31,7 @@ Church numbers 0-9 are also shorthands, but those are generated dynamically.
 ? means might not do
 - Indicate where you're typing ?
 - Output `x Lx.x` instead of `x (Lx.x)` ?
+- Ensure colors only appear once per letter ?
 - Correctly structure trees like `x (Lx.x x) Ly.Lz.y z`
+- Parse variables like `x''`. These can currently cause issues
 - Zoom

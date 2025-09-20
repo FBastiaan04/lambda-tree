@@ -33,7 +33,7 @@ def squareRight(v: Vector2) -> Vector2:
     return Vector2(-v.y, v.x)
 
 def surroundingRect(a: Vector2, b: Vector2) -> List[Vector2]:
-    basis = (b - a).normalize() * 10
+    basis = (b - a).normalize() * 13
     basis += squareRight(basis) # basis now points left
     return [
         a + squareRight(basis),
@@ -830,7 +830,6 @@ while running:
                 if event.key >= pygame.K_0 and event.key <= pygame.K_9:
                     newNode = genChurchNumber(event.key - pygame.K_0)
                     continue
-
                 if event.unicode < 'A' or event.unicode > 'Z': continue
                 if tree.isComplete():
                     saveShorthand(event.unicode)
@@ -838,6 +837,7 @@ while running:
                 
                 if event.unicode in shorthands:
                     newNode = shorthands[event.unicode].copy(VarNameSet())
+                continue
             match event.key:
                 case pygame.K_ESCAPE:
                     running = False
