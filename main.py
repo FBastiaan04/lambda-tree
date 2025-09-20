@@ -231,7 +231,12 @@ class Apply(Node):
         self.isRedex = False
 
     def __repr__(self):
-        return f"({self.left}) ({self.right})"
+        left = self.left
+        right = self.right
+        lhs = f"({left})" if isinstance(left, Lambda) else f"{left}"
+        rhs = f"{right}" if isinstance(right, Var) else f"({right})"
+
+        return lhs + " " + rhs
 
     def updateOccupied(self, occupied: NodePositions, parentX: int = 0, path: Path = Path()):
         x = parentX + self.xOffset
@@ -379,7 +384,8 @@ class VarNameSet:
             self.inner.remove(name)
 
     def merge(self, other: VarNameSet):
-        self.inner.extend(other.inner)
+        for new in other.inner:
+            self.add(new)
 
     def isEmpty(self) -> bool:
         return len(self.inner) == 0
@@ -603,13 +609,13 @@ class Tree:
         for step in path:
             match step:
                 case "0":
-                    cast(Apply, current).left
+                    current = cast(Apply, current).left
                 case "1":
                     current = cast(Lambda, current)
                     result.add(cast(VarName, current.param))
                     current = current.body
                 case "2":
-                    cast(Apply, current).left
+                    current = cast(Apply, current).left
                 case _:
                     raise Unreachable()
         return result
@@ -656,30 +662,6 @@ class Tree:
         result = self.root.copy(VarNameSet())
         return result
 
-shorthandValsX = [VarName("x") for _ in range(3)]
-shorthandValsY = [VarName("y") for _ in range(2)]
-
-shorthands: Dict[str, Node] = {
-    "I": Lambda(
-        shorthandValsX[0],
-        Var(shorthandValsX[0])
-    ),
-    "T": Lambda(
-        shorthandValsX[1],
-        Lambda(
-            shorthandValsY[0],
-            Var(shorthandValsX[1])
-        )
-    ),
-    "F": Lambda(
-        shorthandValsX[2],
-        Lambda(
-            shorthandValsY[1],
-            Var(shorthandValsY[1])
-        )
-    )
-}
-
 def genChurchNumber(n: int) -> Node:
     z = VarName("z")
     s = VarName("s")
@@ -709,11 +691,11 @@ def _parseTerm(term: Iterator[str]) -> str:
         match c := tryNext(term):
             case "(":
                 subTerms += _parseTerm(term)
-            case "L":
+            case "L" | "λ":
                 subTerms += _parseLambda(term)
                 return "@" * nApply + "".join(subTerms)
             case _:
-                if c < "a" or c > "z": raise MalformattedTerm(c)
+                if (c < "a" or c > "z") and (c < "A" or c > "Z"): raise MalformattedTerm(c)
                 subTerms += c
         
         match c := tryNext(term):
@@ -729,9 +711,11 @@ def _parseLambda(term: Iterator[str]) -> str:
     params = ""
     while (c := tryNext(term)) != ".":
         if c < "a" or c > "z": raise MalformattedTerm(c)
-        params += "L" + c
+        params += "λ" + c
     
     return params + _parseTerm(term)
+
+shorthands: Dict[str, Node] = {}
 
 def parseTerm(term: str) -> Tree:
     ir = _parseTerm(iter(term))
@@ -739,18 +723,26 @@ def parseTerm(term: str) -> Tree:
     result = Tree()
     for c in ir:
         match c:
-            case "L":
+            case "λ":
                 result.add(Lambda(None, None))
             case "@":
                 result.add(Apply(None, None))
             case _:
-                result.add(c)
+                if c in shorthands:
+                    result.add(shorthands[c].copy(VarNameSet()))
+                else:
+                    result.add(c)
 
     print("tree", result)
     result.updateStructure()
     return result
 
-tree = parseTerm(input())
+with open("shorthands") as fh:
+    for line in fh.readlines():
+        shorthand, term = line.split(" = ")
+        shorthands[shorthand] = cast(Node, parseTerm(term.strip()).root)
+
+tree = Tree()
 
 screen = pygame.display.set_mode((1280, 720))
 clock = pygame.time.Clock()
@@ -802,7 +794,7 @@ while running:
         print(f"adding {newNode}")
         tree.add(newNode)
         tree.updateStructure()
-        print(tree, tree.freeVars)
+        print(tree)
 
     # fill the screen with a color to wipe away anything from last frame
     screen.fill(background)
