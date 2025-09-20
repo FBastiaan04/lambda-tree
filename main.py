@@ -18,7 +18,7 @@ class MalformattedTerm(Exception):
 pygame.init()
 
 minOffset = 1
-font = pygame.font.SysFont('arial', 20)
+font = pygame.font.SysFont('verdana', 20)
 background = "black"
 foreground = "white"
 colWidth = 30
@@ -43,9 +43,6 @@ def surroundingRect(a: Vector2, b: Vector2) -> List[Vector2]:
     ]
 
 class Path(str): # if a.path < b.path, then node a is left of node b
-    def __repr__(self):
-        return self.replace("0", "L").replace("1", "D").replace("2", "R")
-    
     def left(self) -> Path:
         return Path(self + "0")
     
@@ -141,7 +138,9 @@ class Lambda(Node):
         self.body = body
 
     def __repr__(self):
-        return f"L{self.param}.{self.body}"
+        if isinstance(self.body, Lambda):
+            return f"λ{self.param}{self.body.__repr__()[1:]}"
+        return f"λ{self.param}.{self.body}"
 
     def updateOccupied(self, occupied: NodePositions, parentX: int = 0, path: Path = Path()):
         x = parentX + self.xOffset
@@ -770,6 +769,46 @@ tree: Tree = Tree()
 screen = pygame.display.set_mode((1280, 720), pygame.RESIZABLE)
 clock = pygame.time.Clock()
 running = True
+isShiftPressed = False
+
+def getUsage() -> List[str]:
+    if isShiftPressed:
+        if tree.isComplete():
+            return ["Shift+Letter: Save current tree as shorthand"]
+        return ["Insert shorthand:"] + [f"{k}: {v}" for k, v in shorthands.items()] + ["0-9: Church numbers"]
+    
+    result = [
+        "Escape: exit",
+        "Backspace: remove last node",
+        "Delete: delete tree",
+    ]
+
+    if tree.isComplete():
+        result += [
+            "Enter: β-reduce"
+        ]
+    else:
+        result += [
+            "L: Lambda node",
+            "Space: Apply node",
+            "Any letter: Var node",
+            "Enter: insert term from terminal"
+        ]
+    return result
+    
+def saveShorthand(name: str):
+    newShorthand = tree.copy()
+    if newShorthand:
+        shorthands[name] = newShorthand
+        with open("shorthands", "r+") as fh:
+            linesA = fh.readlines()
+            lines = [line for line in linesA if line[0] != name]
+            print(linesA, lines)
+            lines.append(f"{name} = {newShorthand}\n".replace("λ", "L"))
+            fh.seek(0)
+            fh.writelines(lines)
+            fh.truncate()
+        print(f"Added shorthand {name} = {newShorthand}")
 
 while running:
     # poll for events
@@ -781,18 +820,26 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_LSHIFT:
+                isShiftPressed = True
+
         if event.type == pygame.KEYUP:
+            if event.key == pygame.K_LSHIFT:
+                isShiftPressed = False
+                continue
             if event.mod & pygame.KMOD_SHIFT:
-                if event.key < 33 or event.key > 126: continue
+                if event.key >= pygame.K_0 and event.key <= pygame.K_9:
+                    newNode = genChurchNumber(event.key - pygame.K_0)
+                    continue
+
+                if event.unicode < 'A' or event.unicode > 'Z': continue
+                if tree.isComplete():
+                    saveShorthand(event.unicode)
+                    continue
+                
                 if event.unicode in shorthands:
                     newNode = shorthands[event.unicode].copy(VarNameSet())
-                elif event.key >= pygame.K_0 and event.key <= pygame.K_9:
-                    newNode = genChurchNumber(event.key - pygame.K_0)
-                else:
-                    newShorthand = tree.copy()
-                    print(f"Added shorthand {newShorthand} as {event.unicode}")
-                    if newShorthand: shorthands[event.unicode] = newShorthand
-                continue
             match event.key:
                 case pygame.K_ESCAPE:
                     running = False
@@ -805,6 +852,8 @@ while running:
                     if tree.isComplete():
                         tree.autoReduce()
                         continue
+                    screen.blit(font.render("Awaiting input from terminal", True, "red"), (200,10))
+                    pygame.display.flip()
                     inp = input("term (use L for λ): ").strip()
                     try:
                         ir = _parseTerm(iter(inp))
@@ -838,6 +887,13 @@ while running:
     screen.fill(background)
 
     tree.draw(screen)
+
+    usageSurfs = [(font.render(line, True, foreground), (10, 10+25*i)) for i, line in enumerate(getUsage())]
+    screen.blits(usageSurfs)
+
+    if tree.isComplete():
+        termSurf = font.render(tree.__repr__(), True, foreground)
+        screen.blit(termSurf, (startX * 2 - termSurf.get_width() - 10, 10))
 
     # flip() the display to put your work on screen
     pygame.display.flip()
