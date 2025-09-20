@@ -1,4 +1,5 @@
 # Installation
+requires python 3.10 or newer
 ```bash
 git clone https://github.com/FBastiaan04/lambda-tree
 cd lambda-tree
