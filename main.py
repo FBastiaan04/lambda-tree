@@ -567,6 +567,8 @@ class Tree:
     def betaReduce(self, path: Path):
         if not self.isComplete(): return
 
+        print(self, end=" -> ")
+
         nodeApp = self.getByPath(path)
         if not (isinstance(nodeApp, Apply) and nodeApp.isRedex): return
         nodeLam = cast(Lambda, nodeApp.left)
@@ -612,6 +614,7 @@ class Tree:
 
         self.updateStructure()
         self.freeVars.removeUnused()
+        print(self)
 
     def getScopeByPath(self, path: Path) -> VarNameMultiSet:
         result = VarNameMultiSet()
@@ -682,6 +685,7 @@ class Tree:
             self.freeVars.removeUnused()
 
     def clear(self):
+        print("CLEAR")
         self.root = None
         self.freeVars.clear()
 
@@ -763,11 +767,9 @@ def parseTerm(term: str) -> Tree | None:
         ir = _parseTerm(iter(term))
     except MalformattedTerm:
         return None
-    print("ir", ir)
     result = Tree()
     result.addIR(ir)
 
-    print("tree", result)
     result.updateStructure()
     return result
 
@@ -890,10 +892,8 @@ while running:
             startX = screen.get_width() // 2
 
     if newNode:
-        print(f"Adding {newNode}")
         tree.add(newNode)
         tree.updateStructure()
-        print(tree)
 
     # fill the screen with a color to wipe away anything from last frame
     screen.fill(background)

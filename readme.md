@@ -34,3 +34,4 @@ Church numbers 0-9 are also shorthands, but those are generated dynamically.
 - Ensure colors only appear once per letter ?
 - Correctly structure trees like `x (Lx.x x) Ly.Lz.y z`
 - Zoom
+- Make input async

@@ -3,3 +3,4 @@ T = Lxy.x
 F = Lxy.y
 O = (Lx.x x) Lx.x x
 V = Lf.(Lx.f (x x)) Lx.f (x x)
+S = Lxyz.x z (y z)
