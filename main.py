@@ -703,6 +703,41 @@ class Tree:
         if self.root is None or not self.isComplete() or not self.isClosed(): return None
         result = self.root.copy(VarNameSet())
         return result
+    
+    def isSpecial(self) -> str | None:
+        # Boolean
+        if not isinstance(self.root, Lambda) or not isinstance(self.root.body, Lambda):
+            return None
+        lx = self.root
+        ly = self.root.body
+        x = lx.param
+        y = ly.param
+        if x is None or y is None:
+            return None
+        if isinstance(ly.body, Var):
+            if ly.body.name == x:
+                return "True"
+            elif ly.body.name == y:
+                return "False/0"
+            return None
+        
+        if not isinstance(ly.body, Apply):
+            return None
+        
+        tail = ly.body
+        if not isinstance(tail.left, Var) or tail.left.name != x:
+            return None
+        n = 0
+        while tail := tail.right:
+            n += 1
+            if isinstance(tail, Var) and tail.name == y:
+                return str(n)
+            if not isinstance(tail, Apply):
+                return None
+            if not isinstance(tail.left, Var) or tail.left.name != x:
+                return None
+            
+
 
 def genChurchNumber(n: int) -> Node:
     z = VarName("z")
@@ -910,6 +945,9 @@ while running:
     if tree.isComplete():
         termSurf = font.render(tree.__repr__(), True, foreground)
         screen.blit(termSurf, (startX * 2 - termSurf.get_width() - 10, 10))
+        if special := tree.isSpecial():
+            specialSurf = font.render(special, True, foreground)
+            screen.blit(specialSurf, (startX * 2 - specialSurf.get_width() - 10, 35))
 
     # flip() the display to put your work on screen
     pygame.display.flip()
